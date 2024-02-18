@@ -1,67 +1,76 @@
-import json
 import socket
-import threading
+import select
+import json
 
-class TelnetServer:
-    def __init__(self, host='0.0.0.0', port=2003):
-        self.host = host
-        self.port = port
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.clients = []
+# Telnet command codes
+IAC = 255   # Interpret As Command
+DONT = 254
+DO = 253
+WONT = 252
+WILL = 251
+SB = 250    # Subnegotiation Begin
+SE = 240    # Subnegotiation End
+GMCP = 201  # Generic MUD Communication Protocol
 
-    def start_server(self):
-        self.server_socket.bind((self.host, self.port))
-        self.server_socket.listen()
-        print(f'Server started on {self.host}:{self.port}')
-        try:
-            while True:
-                client_socket, client_address = self.server_socket.accept()
-                print(f'Client connected: {client_address}')
-                client_thread = threading.Thread(target=self.handle_client, args=(client_socket,))
-                client_thread.start()
-        except KeyboardInterrupt:
-            print('Server shutting down...')
-        finally:
-            self.server_socket.close()
+def send_gmcp_message(sock, message, data=""):
+    """Send a GMCP message to a client."""
+    msg = f"{message} {json.dumps(data)}" if data else message
+    # GMCP data needs to be wrapped in IAC SB GMCP <data> IAC SE
+    gmcp_data = IAC.to_bytes(1, 'big') + SB.to_bytes(1, 'big') + GMCP.to_bytes(1, 'big') + msg.encode() + IAC.to_bytes(1, 'big') + SE.to_bytes(1, 'big')
+    sock.send(gmcp_data)
 
-    def handle_client(self, client_socket):
-        try:
-            while True:
-                data = client_socket.recv(1024)
-                if not data:
-                    break
-                message = data.decode('utf-8')
-                self.process_message(message, client_socket)
-        except ConnectionResetError:
-            print('Client disconnected')
-        finally:
-            client_socket.close()
+def negotiate_gmcp(sock):
+    """Negotiate GMCP with the client."""
+    sock.send(IAC.to_bytes(1, 'big') + WILL.to_bytes(1, 'big') + GMCP.to_bytes(1, 'big'))
 
-    def process_message(self, message, client_socket):
-        try:
-            # Simulating processing of GMCP messages
-            if 'Client.Supports.Set' in message:
-                supported_auth_methods = json.dumps({
-                    "Client.Authenticate.Default": {"type": ["password-credentials"]}
-                })
-                client_socket.send(supported_auth_methods.encode('utf-8'))
-            elif 'Client.Authenticate.Credentials' in message:
-                # Simplified credential check (replace with real validation logic)
-                credentials = json.loads(message.split(' ', 1)[1])
-                username = credentials.get('character')
-                password = credentials.get('password')
-                if username == "username" and password == "password":  # Placeholder check
-                    auth_result = json.dumps({
-                        "Client.Authenticate.Result": {"success": True}
-                    })
+def parse_telnet_commands(data, sock):
+    """Parse telnet commands and respond accordingly."""
+    if data[0] == IAC and data[1] == DO and data[2] == GMCP:
+        print("Client supports GMCP.")
+    elif data[0] == IAC and data[1] in (DO, DONT, WILL, WONT):
+        # Respond to other negotiations as needed
+        pass
+    else:
+        # Handle other data/commands
+        pass
+
+def main():
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind(('0.0.0.0', 2003)) 
+    server_socket.listen()
+
+    print("Telnet server started on port 2003.")
+
+    clients = []
+
+    try:
+        while True:
+            read_sockets, _, _ = select.select([server_socket] + clients, [], [])
+
+            for sock in read_sockets:
+                if sock == server_socket:
+                    client_socket, client_address = server_socket.accept()
+                    print(f"Client {client_address} connected.")
+                    clients.append(client_socket)
+                    negotiate_gmcp(client_socket)
                 else:
-                    auth_result = json.dumps({
-                        "Client.Authenticate.Result": {"success": False, "message": "Invalid credentials"}
-                    })
-                client_socket.send(auth_result.encode('utf-8'))
-        except Exception as e:
-            print(f'Error processing message: {e}')
+                    try:
+                        data = sock.recv(1024)
+                        if data:
+                            parse_telnet_commands(data, sock)
+                        else:
+                            print("Client disconnected.")
+                            clients.remove(sock)
+                            sock.close()
+                    except Exception as e:
+                        print(f"Error: {e}")
+                        clients.remove(sock)
+                        sock.close()
+    except KeyboardInterrupt:
+        print("Server shutting down.")
+    finally:
+        server_socket.close()
 
 if __name__ == "__main__":
-    server = TelnetServer()
-    server.start_server()
+    main()
