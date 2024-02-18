@@ -1,7 +1,6 @@
 import socket
 import select
 import json
-import random
 
 # Constants for Telnet commands and GMCP
 IAC = 255
@@ -19,6 +18,8 @@ def send_gmcp(sock, message, data):
     gmcp_data = f"{message} {json.dumps(data)}"
     sock.send(bytes([IAC, SB, GMCP]) + gmcp_data.encode("utf-8") + bytes([IAC, SE]))
 
+def send_text(sock, message):
+    sock.send(message.encode("utf-8"))
 
 def process_data(sock, data):
     # Remove GMCP acknowledgement from the message
@@ -44,8 +45,8 @@ def process_data(sock, data):
             message = message.decode("utf-8")
             print(f"Received GMCP message: {message}")
 
-            # Load GMCP message as JSON
             try:
+                # Load GMCP message as JSON
                 gmcp_json = json.loads(message.split(" ", 1)[1])
                 if "Client.Authenticate 1" in gmcp_json:
                     send_gmcp(
@@ -59,16 +60,18 @@ def process_data(sock, data):
                     # Placeholder for authentication logic
                     print(f"Logging in for: {credentials['account']}")
 
-                    # randomly accept 2/3 authentication requests
-                    if (random.random() < 2/3):
+                    if credentials["account"] == "admin" and credentials["password"] == "hunter2":
                         send_gmcp(sock, "Client.Authenticate.Result", {"success": True})
+                        send_text(sock, "Authentication successful. Welcome to the server!")
                         print("Authentication successful")
+                        return
                     else:
                         send_gmcp(
                             sock,
                             "Client.Authenticate.Result",
                             {"success": False, "message": "Invalid credentials"},
                         )
+                        send_text(sock, "GMCP Authentication flow was successful, but the credentials were incorrect.")
                         print("Authentication failed")
             except json.JSONDecodeError:
                 print("Error decoding GMCP JSON")
