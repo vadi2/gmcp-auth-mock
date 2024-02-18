@@ -1,76 +1,113 @@
 import socket
 import select
 import json
+import random
 
-# Telnet command codes
-IAC = 255   # Interpret As Command
-DONT = 254
-DO = 253
-WONT = 252
+# Constants for Telnet commands and GMCP
+IAC = 255
+SB = 250
+SE = 240
 WILL = 251
-SB = 250    # Subnegotiation Begin
-SE = 240    # Subnegotiation End
-GMCP = 201  # Generic MUD Communication Protocol
+DO = 253
+DONT = 254
+WONT = 252
+GMCP = 201
 
-def send_gmcp_message(sock, message, data=""):
-    """Send a GMCP message to a client."""
-    msg = f"{message} {json.dumps(data)}" if data else message
-    # GMCP data needs to be wrapped in IAC SB GMCP <data> IAC SE
-    gmcp_data = IAC.to_bytes(1, 'big') + SB.to_bytes(1, 'big') + GMCP.to_bytes(1, 'big') + msg.encode() + IAC.to_bytes(1, 'big') + SE.to_bytes(1, 'big')
-    sock.send(gmcp_data)
 
-def negotiate_gmcp(sock):
-    """Negotiate GMCP with the client."""
-    sock.send(IAC.to_bytes(1, 'big') + WILL.to_bytes(1, 'big') + GMCP.to_bytes(1, 'big'))
+# Helper function to send GMCP messages
+def send_gmcp(sock, message, data):
+    gmcp_data = f"{message} {json.dumps(data)}"
+    sock.send(bytes([IAC, SB, GMCP]) + gmcp_data.encode("utf-8") + bytes([IAC, SE]))
 
-def parse_telnet_commands(data, sock):
-    """Parse telnet commands and respond accordingly."""
-    if data[0] == IAC and data[1] == DO and data[2] == GMCP:
-        print("Client supports GMCP.")
-    elif data[0] == IAC and data[1] in (DO, DONT, WILL, WONT):
-        # Respond to other negotiations as needed
-        pass
+
+def process_data(sock, data):
+    # Remove GMCP acknowledgement from the message
+    if bytes([IAC, DO, GMCP]) in data:
+        data = data.replace(bytes([IAC, DO, GMCP]), b"")
+
+    # Simple parsing for GMCP data (intened for mock only)
+    if not (
+        data.startswith(bytes([IAC, SB, GMCP])) and data.endswith(bytes([IAC, SE]))
+    ):
+        print(f"Received non GMCP data: {data}")
+
+        return
     else:
-        # Handle other data/commands
-        pass
+        data = data.replace(bytes([IAC, SB, GMCP]), b"")
+        data = data.replace(bytes([IAC, SB]), b"")
 
-def main():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind(('0.0.0.0', 2003)) 
-    server_socket.listen()
+        gmcp_messages = data.split(bytes([IAC, SE]))
+        for message in gmcp_messages:
+            if not message:
+                continue
 
-    print("Telnet server started on port 2003.")
+            message = message.decode("utf-8")
+            print(f"Received GMCP message: {message}")
 
-    clients = []
+            # Load GMCP message as JSON
+            try:
+                gmcp_json = json.loads(message.split(" ", 1)[1])
+                if "Client.Authenticate 1" in gmcp_json:
+                    send_gmcp(
+                        sock,
+                        "Client.Authenticate.Default",
+                        {"type": ["password-credentials"]},
+                    )
 
-    try:
-        while True:
-            read_sockets, _, _ = select.select([server_socket] + clients, [], [])
+                if "Client.Authenticate.Credentials" in message:
+                    credentials = gmcp_json
+                    # Placeholder for authentication logic
+                    print(f"Logging in for: {credentials['account']}")
 
-            for sock in read_sockets:
-                if sock == server_socket:
-                    client_socket, client_address = server_socket.accept()
-                    print(f"Client {client_address} connected.")
-                    clients.append(client_socket)
-                    negotiate_gmcp(client_socket)
-                else:
-                    try:
+                    # randomly accept 2/3 authentication requests
+                    if (random.random() < 2/3):
+                        send_gmcp(sock, "Client.Authenticate.Result", {"success": True})
+                        print("Authentication successful")
+                    else:
+                        send_gmcp(
+                            sock,
+                            "Client.Authenticate.Result",
+                            {"success": False, "message": "Invalid credentials"},
+                        )
+                        print("Authentication failed")
+            except json.JSONDecodeError:
+                print("Error decoding GMCP JSON")
+
+
+# Main server function
+def start_server(host="0.0.0.0", port=2003):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_sock.bind((host, port))
+        server_sock.listen()
+        print(f"Server listening on {host}:{port}")
+
+        connected_clients = []
+
+        try:
+            while True:
+                readable, _, _ = select.select(
+                    [server_sock] + connected_clients, [], []
+                )
+                for sock in readable:
+                    if sock is server_sock:
+                        client_sock, client_address = server_sock.accept()
+                        print(f"Connection from {client_address}")
+                        connected_clients.append(client_sock)
+
+                        # Negotiate GMCP
+                        client_sock.send(bytes([IAC, WILL, GMCP]))
+                    else:
                         data = sock.recv(1024)
-                        if data:
-                            parse_telnet_commands(data, sock)
-                        else:
-                            print("Client disconnected.")
-                            clients.remove(sock)
+                        if not data:
+                            print(f"Client {sock.getpeername()} disconnected")
+                            connected_clients.remove(sock)
                             sock.close()
-                    except Exception as e:
-                        print(f"Error: {e}")
-                        clients.remove(sock)
-                        sock.close()
-    except KeyboardInterrupt:
-        print("Server shutting down.")
-    finally:
-        server_socket.close()
+                        else:
+                            process_data(sock, data)
+        except KeyboardInterrupt:
+            print("Server shutting down")
+
 
 if __name__ == "__main__":
-    main()
+    start_server()
