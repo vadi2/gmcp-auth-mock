@@ -4,10 +4,7 @@ This is a mock MUD server implementation that demonstrates [GMCP Authentication]
 
 ## Overview
 
-- Implements a basic TCP server using Python's socket module
-- Supports the GMCP (Generic MUD Communication Protocol) telnet negotiation
-- Parses incoming GMCP messages and handles a simple authentication flow
-- Responds with appropriate GMCP and plain text messages
+- The actual implementation relevant to the spec is in a few lines of Python: https://github.com/vadi2/gmcp-auth-mock/blob/main/mock.py#L53-L77
 
 ## Usage
 
