@@ -32,6 +32,10 @@ def process_data(sock, data):
     ):
         print(f"Received non GMCP data: {data}")
 
+        # emulate a traditional login
+        if b"hunter2" in data:
+            send_text(sock, "Traditional login successful.")
+
         return
     else:
         data = data.replace(bytes([IAC, SB, GMCP]), b"")
@@ -97,6 +101,7 @@ def start_server(host="0.0.0.0", port=2003):
                         connected_clients.append(client_sock)
 
                         # Negotiate GMCP
+                        client_sock.send(b"Welcome to the server!\n")
                         client_sock.send(bytes([IAC, WILL, GMCP]))
                     else:
                         data = sock.recv(1024)
