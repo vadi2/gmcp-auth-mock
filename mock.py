@@ -57,8 +57,6 @@ def process_data(sock, data):
 
                 if "Client.Authenticate.Credentials" in message:
                     credentials = gmcp_json
-                    # Placeholder for authentication logic
-                    print(f"Logging in for: {credentials['account']}")
 
                     if credentials["account"] == "admin" and credentials["password"] == "hunter2":
                         send_gmcp(sock, "Client.Authenticate.Result", {"success": True})
