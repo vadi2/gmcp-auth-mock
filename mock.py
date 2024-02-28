@@ -51,7 +51,11 @@ def process_data(sock, data):
 
             try:
                 # Load GMCP message as JSON
-                gmcp_json = json.loads(message.split(" ", 1)[1])
+                parts = message.split(" ", 1)
+                if not len(parts) >= 2:
+                     continue
+
+                gmcp_json = gmcp_json = json.loads(parts[1])
                 if "Char.Login 1" in gmcp_json:
                     send_gmcp(
                         sock,
