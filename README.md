@@ -37,7 +37,7 @@ The server will also accept a plain text password of `hunter2`.
 The server listens for connections in a loop. When data is received:
 
 - GMCP messages are parsed from the telnet data
-- On `Client.Authenticate` messages, the credentials are checked
+- On `Char.Login` messages, the credentials are checked
 - Responses are sent over GMCP and plain text
 
 This shows a basic GMCP implementation and authentication flow.

@@ -52,25 +52,25 @@ def process_data(sock, data):
             try:
                 # Load GMCP message as JSON
                 gmcp_json = json.loads(message.split(" ", 1)[1])
-                if "Client.Authenticate 1" in gmcp_json:
+                if "Char.Login 1" in gmcp_json:
                     send_gmcp(
                         sock,
-                        "Client.Authenticate.Default",
+                        "Char.Login.Default",
                         {"type": ["password-credentials"]},
                     )
 
-                if "Client.Authenticate.Credentials" in message:
+                if "Char.Login.Credentials" in message:
                     credentials = gmcp_json
 
                     if credentials["account"] == "admin" and credentials["password"] == "hunter2":
-                        send_gmcp(sock, "Client.Authenticate.Result", {"success": True})
+                        send_gmcp(sock, "Char.Login.Result", {"success": True})
                         send_text(sock, "Authentication successful. Welcome to the server!")
                         print("Authentication successful")
                         return
                     else:
                         send_gmcp(
                             sock,
-                            "Client.Authenticate.Result",
+                            "Char.Login.Result",
                             {"success": False, "message": "Invalid credentials"},
                         )
                         send_text(sock, "GMCP Authentication flow was successful, but the credentials were incorrect.")
